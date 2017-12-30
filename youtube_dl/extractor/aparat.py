@@ -1,11 +1,11 @@
 # coding: utf-8
 from __future__ import unicode_literals
 
-from .common import InfoExtractor
-from ..utils import (
-    int_or_none,
-    mimetype2ext,
-)
+from lutino.utils import re
+
+from bs4 import BeautifulSoup
+from youtube_dl.extractor.common import InfoExtractor
+from youtube_dl.utils import ExtractorError
 
 
 class AparatIE(InfoExtractor):
@@ -26,44 +26,69 @@ class AparatIE(InfoExtractor):
     def _real_extract(self, url):
         video_id = self._match_id(url)
 
-        # Note: There is an easier-to-parse configuration at
-        # http://www.aparat.com/video/video/config/videohash/%video_id
-        # but the URL in there does not work
-        webpage = self._download_webpage(
-            'http://www.aparat.com/video/video/embed/vt/frame/showvideo/yes/videohash/' + video_id,
-            video_id)
-
-        title = self._search_regex(r'\s+title:\s*"([^"]+)"', webpage, 'title')
-
-        file_list = self._parse_json(
-            self._search_regex(
-                r'fileList\s*=\s*JSON\.parse\(\'([^\']+)\'\)', webpage,
-                'file list'),
-            video_id)
+        webpage = self._download_webpage(url, video_id)
+        html_elements = BeautifulSoup(webpage, 'html.parser')
 
         formats = []
-        for item in file_list[0]:
-            file_url = item.get('file')
-            if not file_url:
-                continue
-            ext = mimetype2ext(item.get('type'))
-            label = item.get('label')
-            formats.append({
-                'url': file_url,
-                'ext': ext,
-                'format_id': label or ext,
-                'height': int_or_none(self._search_regex(
-                    r'(\d+)[pP]', label or '', 'height', default=None)),
-            })
-        self._sort_formats(formats)
 
-        thumbnail = self._search_regex(
-            r'image:\s*"([^"]+)"', webpage, 'thumbnail', fatal=False)
+        file_list = self._search_regex(
+            r'fileList\s*=\s*JSON\.parse\(\'([^\']+)\'\)', webpage, 'file list', fatal=False)
+        if file_list is not None:
+            try:
+                file_list = self._parse_json(file_list, video_id)
+            except Exception:
+                file_list = None
+
+        file_list_pseudo = self._search_regex(
+            r'fileListPseudo\s*=\s*JSON\.parse\(\'([^\']+)\'\)', webpage, 'file list pseudo', fatal=False)
+        if file_list_pseudo is not None:
+            try:
+                file_list_pseudo = self._parse_json(file_list_pseudo, video_id)
+            except Exception:
+                file_list_pseudo = None
+
+        if file_list_pseudo is not None:
+            file_list = file_list_pseudo
+
+        if file_list is None:
+            raise ExtractorError
+
+        for i, item in enumerate(file_list[0]):
+            label = item.get('label')
+            if not label:
+                label = str(i)
+            else:
+                label = label[:-1]
+
+            formats.append(dict(
+                protocol='https',
+                format_id=label,
+                height=int(label),
+                vcodec='h264',
+                acodec='aac',
+                ext='mp4',
+                url=item['file']
+            ))
+
+        title = html_elements.find('meta', {'property': 'og:title'})['content']
+        description = html_elements.find('meta', {'property': 'og:description'})['content']
+        thumbnail = html_elements.find('meta', {'property': 'og:image'})['content']
+        tag_element = html_elements.find('ul', {'class': 'vone__tags'})
+        tags = [t['title'] for t in tag_element.findAll('a', {'class': 'video_one_tag_link'})]
+        category_element = html_elements.find('a', {'class': 'vone__cats'})['href']
+        category_slug = re.search(r'aparat.com/([\w\-_]+)/?', category_element).group(1)
 
         return {
             'id': video_id,
             'title': title,
+            'description': description,
+            'ext': 'mp4',
             'thumbnail': thumbnail,
-            'age_limit': self._family_friendly_search(webpage),
             'formats': formats,
+            'tags': tags,
+            'categories': [category_slug],
+            'age_limit': self._family_friendly_search(webpage),
         }
+
+    def _family_friendly_search(self, html):
+        return 0

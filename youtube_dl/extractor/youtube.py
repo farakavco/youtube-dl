@@ -1720,7 +1720,7 @@ class YoutubeIE(YoutubeBaseInfoExtractor):
         if not upload_date:
             upload_date = self._search_regex(
                 [r'(?s)id="eow-date.*?>(.*?)</span>',
-                 r'(?:id="watch-uploader-info".*?>.*?|["\']simpleText["\']\s*:\s*["\'])(?:Published|Uploaded|Streamed live|Started) on (.+?)[<"\']'],
+                 r'(?:id="upload-info".*?>.*?|["\']simpleText["\']\s*:\s*["\'])(?:Published|Uploaded|Streamed live|Started) on (.+?)[<"\']'],
                 video_webpage, 'upload date', default=None)
         upload_date = unified_strdate(upload_date)
 

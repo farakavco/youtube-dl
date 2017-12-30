@@ -28,6 +28,7 @@ from ..utils import (
     unescapeHTML,
     parse_filesize,
 )
+from bs4 import BeautifulSoup
 
 
 class VimeoBaseInfoExtractor(InfoExtractor):
@@ -468,6 +469,21 @@ class VimeoIE(VimeoBaseInfoExtractor):
         request = sanitized_Request(url, headers=headers)
         try:
             webpage, urlh = self._download_webpage_handle(request, video_id)
+
+            # Get video info from json
+            video_info = json.loads(re.findall(r'window.vimeo.clip_page_config = (.*);', webpage)[0])
+
+            # Get video categories info (primary-cats and sub-cats)
+            categories = list(map(lambda x: x['url'], video_info.get('categories_config', {}).get('categories') or []))
+            categories_url_part = [list(filter(None, cat.split('/'))) for cat in categories]
+            primary_categories = list({cat[1] for cat in categories_url_part})
+            sub_categories = list({cat[2] for cat in categories_url_part if len(cat) > 2})
+
+            # Get video tags info (append sub-cats to tags)
+            html_elements = BeautifulSoup(webpage, 'html.parser')
+            tags = [tag['content'] for tag in html_elements.find_all('meta', {'property': 'article:tag'})]
+            tags += sub_categories
+
             # Some URLs redirect to ondemand can't be extracted with
             # this extractor right away thus should be passed through
             # ondemand extractor (e.g. https://vimeo.com/73445910)
@@ -535,8 +551,10 @@ class VimeoIE(VimeoBaseInfoExtractor):
                                             flags=re.DOTALL)
                 config = json.loads(config)
         except Exception as e:
-            if re.search('The creator of this video has not given you permission to embed it on this domain.', webpage):
-                raise ExtractorError('The author has restricted the access to this video, try with the "--referer" option')
+            if re.search('The creator of this video has not given you permission to embed it on this domain.',
+                         webpage):
+                raise ExtractorError(
+                    'The author has restricted the access to this video, try with the "--referer" option')
 
             if re.search(r'<form[^>]+?id="pw_form"', webpage) is not None:
                 if '_video_password_verified' in data:
@@ -605,8 +623,10 @@ class VimeoIE(VimeoBaseInfoExtractor):
             comment_count = None
 
         formats = []
-        download_request = sanitized_Request('https://vimeo.com/%s?action=load_download_config' % video_id, headers={
-            'X-Requested-With': 'XMLHttpRequest'})
+        download_request = sanitized_Request(
+            'https://vimeo.com/%s?action=load_download_config' % video_id,
+            headers={'X-Requested-With': 'XMLHttpRequest'}
+         )
         download_data = self._download_json(download_request, video_id, fatal=False)
         if download_data:
             source_file = download_data.get('source_file')
@@ -643,6 +663,8 @@ class VimeoIE(VimeoBaseInfoExtractor):
             'formats': formats,
             'timestamp': unified_timestamp(timestamp),
             'description': video_description,
+            'categories': primary_categories,
+            'tags': tags,
             'webpage_url': url,
             'view_count': view_count,
             'like_count': like_count,
