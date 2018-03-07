@@ -51,7 +51,7 @@ class AparatIE(InfoExtractor):
             file_list = file_list_pseudo
 
         if file_list is None:
-            raise ExtractorError
+            raise ExtractorError('There is no file list json info')
 
         for i, item in enumerate(file_list[0]):
             label = item.get('label')
