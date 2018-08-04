@@ -31,32 +31,26 @@ class AparatIE(InfoExtractor):
 
         formats = []
 
-        file_list = self._search_regex(
-            r'fileList\s*=\s*JSON\.parse\(\'([^\']+)\'\)', webpage, 'file list', fatal=False)
-        if file_list is not None:
+        video_files = self._search_regex(
+            r'options\s*=\s*JSON\.parse\(\'([^\']+)\'\)', webpage, 'video files', fatal=False)
+        if video_files is not None:
             try:
-                file_list = self._parse_json(file_list, video_id)
+                video_files = self._parse_json(video_files, video_id)
             except Exception:
-                file_list = None
+                video_files = None
 
-        file_list_pseudo = self._search_regex(
-            r'fileListPseudo\s*=\s*JSON\.parse\(\'([^\']+)\'\)', webpage, 'file list pseudo', fatal=False)
-        if file_list_pseudo is not None:
-            try:
-                file_list_pseudo = self._parse_json(file_list_pseudo, video_id)
-            except Exception:
-                file_list_pseudo = None
-
-        if file_list_pseudo is not None:
-            file_list = file_list_pseudo
-
-        if file_list is None:
+        if video_files is None:
+            self._downloader.params['logger'].error(
+                url,
+                extra={
+                    'web_page_source': webpage,
+                })
             raise ExtractorError('There is no file list json info')
 
-        for i, item in enumerate(file_list[0]):
+        for index, item in enumerate(video_files['plugins']['sabaPlayerPlugin']['multiSRC'][0]):
             label = item.get('label')
             if not label:
-                label = str(i)
+                label = str(index)
             else:
                 label = label[:-1]
 
@@ -67,7 +61,7 @@ class AparatIE(InfoExtractor):
                 vcodec='h264',
                 acodec='aac',
                 ext='mp4',
-                url=item['file']
+                url=item['src']
             ))
 
         title = html_elements.find('meta', {'property': 'og:title'})['content']
