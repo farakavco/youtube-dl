@@ -49,15 +49,17 @@ class AparatIE(InfoExtractor):
 
         for index, item in enumerate(video_files['plugins']['sabaPlayerPlugin']['multiSRC'][0]):
             label = item.get('label')
-            if not label:
-                label = str(index)
-            else:
+            try:
                 label = label[:-1]
+                height = int(label)
+            except ValueError:
+                label = str(index)
+                height = index
 
             formats.append(dict(
                 protocol='https',
                 format_id=label,
-                height=int(label),
+                height=height,
                 vcodec='h264',
                 acodec='aac',
                 ext='mp4',
