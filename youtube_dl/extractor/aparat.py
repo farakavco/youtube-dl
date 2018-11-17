@@ -92,14 +92,23 @@ class AparatIE(InfoExtractor):
         if not info.get('title'):
             info['title'] = player['title']
 
-        result = merge_dicts(info, {
+        info_dict = merge_dicts(info, self.extra_info(webpage), {
                 'id': video_id,
                 'thumbnail': url_or_none(options.get('poster')),
                 'duration': int_or_none(player.get('duration')),
                 'formats': formats,
             })
+        return info_dict
 
-        print('result', result)
+    @staticmethod
+    def extra_info(webpage):
+        html_elements = BeautifulSoup(webpage, 'html.parser')
+        tag_element = html_elements.find('ul', {'class': 'vone__tags'})
+        tags = [t['title'] for t in tag_element.findAll('a', {'class': 'video_one_tag_link'})]
+        category_element = html_elements.find('a', {'class': 'vone__cats'})['href']
+        category_slug = re.search(r'aparat.com/([\w\-_]+)/?', category_element).group(1)
 
-    def _family_friendly_search(self, html):
-        return 0
+        return {
+            'tags': tags,
+            'categories': [category_slug]
+        }

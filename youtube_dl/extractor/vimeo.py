@@ -487,21 +487,6 @@ class VimeoIE(VimeoBaseInfoExtractor):
         request = sanitized_Request(url, headers=headers)
         try:
             webpage, urlh = self._download_webpage_handle(request, video_id)
-
-            # # Get video info from json
-            # video_info = json.loads(re.findall(r'window.vimeo.clip_page_config = (.*);', webpage)[0])
-            #
-            # # Get video categories info (primary-cats and sub-cats)
-            # categories = list(map(lambda x: x['url'], video_info.get('categories_config', {}).get('categories') or []))
-            # categories_url_part = [list(filter(None, cat.split('/'))) for cat in categories]
-            # primary_categories = list({cat[1] for cat in categories_url_part})
-            # sub_categories = list({cat[2] for cat in categories_url_part if len(cat) > 2})
-            #
-            # # Get video tags info (append sub-cats to tags)
-            # html_elements = BeautifulSoup(webpage, 'html.parser')
-            # tags = [tag['content'] for tag in html_elements.find_all('meta', {'property': 'article:tag'})]
-            # tags += sub_categories
-
             redirect_url = compat_str(urlh.geturl())
             # Some URLs redirect to ondemand can't be extracted with
             # this extractor right away thus should be passed through
@@ -692,8 +677,6 @@ class VimeoIE(VimeoBaseInfoExtractor):
             'formats': formats,
             'timestamp': unified_timestamp(timestamp),
             'description': video_description,
-            # 'categories': primary_categories,
-            # 'tags': tags,
             'webpage_url': url,
             'view_count': view_count,
             'like_count': like_count,
@@ -703,9 +686,29 @@ class VimeoIE(VimeoBaseInfoExtractor):
             'channel_url': channel_url,
         }
 
-        info_dict = merge_dicts(info_dict, info_dict_config, json_ld)
-
+        info_dict = merge_dicts(info_dict, info_dict_config, json_ld, self.extra_info(webpage))
         return info_dict
+
+    @staticmethod
+    def extra_info(webpage):
+        # Get video info from json
+        video_info = json.loads(re.findall(r'window.vimeo.clip_page_config = (.*);', webpage)[0])
+
+        # Get video categories info (primary-cats and sub-cats)
+        categories = list(map(lambda x: x['url'], video_info.get('categories_config', {}).get('categories') or []))
+        categories_url_part = [list(filter(None, cat.split('/'))) for cat in categories]
+        primary_categories = list({cat[1] for cat in categories_url_part})
+        sub_categories = list({cat[2] for cat in categories_url_part if len(cat) > 2})
+
+        # Get video tags info (append sub-cats to tags)
+        html_elements = BeautifulSoup(webpage, 'html.parser')
+        tags = [tag['content'] for tag in html_elements.find_all('meta', {'property': 'article:tag'})]
+        tags += sub_categories
+
+        return {
+            'categories': primary_categories,
+            'tags': tags
+        }
 
 
 class VimeoOndemandIE(VimeoBaseInfoExtractor):
