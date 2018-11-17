@@ -6,85 +6,100 @@ from lutino.utils import re
 from bs4 import BeautifulSoup
 from youtube_dl.extractor.common import InfoExtractor
 from youtube_dl.utils import ExtractorError
+from .common import InfoExtractor
+from ..utils import (
+    int_or_none,
+    merge_dicts,
+    mimetype2ext,
+    url_or_none,
+)
 
 
 class AparatIE(InfoExtractor):
     _VALID_URL = r'https?://(?:www\.)?aparat\.com/(?:v/|video/video/embed/videohash/)(?P<id>[a-zA-Z0-9]+)'
 
-    _TEST = {
+    _TESTS = [{
         'url': 'http://www.aparat.com/v/wP8On',
         'md5': '131aca2e14fe7c4dcb3c4877ba300c89',
         'info_dict': {
             'id': 'wP8On',
             'ext': 'mp4',
             'title': 'تیم گلکسی 11 - زومیت',
-            'age_limit': 0,
+            'description': 'md5:096bdabcdcc4569f2b8a5e903a3b3028',
+            'duration': 231,
+            'timestamp': 1387394859,
+            'upload_date': '20131218',
+            'view_count': int,
         },
-        # 'skip': 'Extremely unreliable',
-    }
+    }, {
+        # multiple formats
+        'url': 'https://www.aparat.com/v/8dflw/',
+        'only_matching': True,
+    }]
 
     def _real_extract(self, url):
         video_id = self._match_id(url)
 
-        webpage = self._download_webpage(url, video_id)
-        html_elements = BeautifulSoup(webpage, 'html.parser')
+        # Provides more metadata
+        webpage = self._download_webpage(url, video_id, fatal=False)
+
+        if not webpage:
+            # Note: There is an easier-to-parse configuration at
+            # http://www.aparat.com/video/video/config/videohash/%video_id
+            # but the URL in there does not work
+            webpage = self._download_webpage(
+                'http://www.aparat.com/video/video/embed/vt/frame/showvideo/yes/videohash/' + video_id,
+                video_id)
+
+        options = self._parse_json(
+            self._search_regex(
+                r'options\s*=\s*JSON\.parse\(\s*(["\'])(?P<value>(?:(?!\1).)+)\1\s*\)',
+                webpage, 'options', group='value'),
+            video_id)
+
+        player = options['plugins']['sabaPlayerPlugin']
 
         formats = []
+        for sources in player['multiSRC']:
+            for item in sources:
+                if not isinstance(item, dict):
+                    continue
+                file_url = url_or_none(item.get('src'))
+                if not file_url:
+                    continue
+                item_type = item.get('type')
+                if item_type == 'application/vnd.apple.mpegurl':
+                    formats.extend(self._extract_m3u8_formats(
+                        file_url, video_id, 'mp4',
+                        entry_protocol='m3u8_native', m3u8_id='hls',
+                        fatal=False))
+                else:
+                    ext = mimetype2ext(item.get('type'))
+                    label = item.get('label')
+                    formats.append({
+                        'url': file_url,
+                        'ext': ext,
+                        'format_id': 'http-%s' % (label or ext),
+                        'height': int_or_none(self._search_regex(
+                            r'(\d+)[pP]', label or '', 'height',
+                            default=None)),
+                    })
+        self._sort_formats(
+            formats, field_preference=('height', 'width', 'tbr', 'format_id'))
 
-        video_files = self._search_regex(
-            r'options\s*=\s*JSON\.parse\(\'([^\']+)\'\)', webpage, 'video files', fatal=False)
-        if video_files is not None:
-            try:
-                video_files = self._parse_json(video_files, video_id)
-            except Exception:
-                video_files = None
+        info = self._search_json_ld(webpage, video_id, default={})
 
-        if video_files is None:
-            self._downloader.params['logger'].error(
-                url,
-                extra={
-                    'web_page_source': webpage,
-                })
-            raise ExtractorError('There is no file list json info')
+        if not info.get('title'):
+            info['title'] = player['title']
 
-        for index, item in enumerate(video_files['plugins']['sabaPlayerPlugin']['multiSRC'][0]):
-            label = item.get('label')
-            try:
-                label = label[:-1]
-                height = int(label)
-            except ValueError:
-                label = str(index)
-                height = index
+        result = merge_dicts(info, {
+                'id': video_id,
+                'thumbnail': url_or_none(options.get('poster')),
+                'duration': int_or_none(player.get('duration')),
+                'formats': formats,
+            })
 
-            formats.append(dict(
-                protocol='https',
-                format_id=label,
-                height=height,
-                vcodec='h264',
-                acodec='aac',
-                ext='mp4',
-                url=item['src']
-            ))
-
-        title = html_elements.find('meta', {'property': 'og:title'})['content']
-        description = html_elements.find('meta', {'property': 'og:description'})['content']
-        thumbnail = html_elements.find('meta', {'property': 'og:image'})['content']
-        tag_element = html_elements.find('ul', {'class': 'vone__tags'})
-        tags = [t['title'] for t in tag_element.findAll('a', {'class': 'video_one_tag_link'})]
-        category_element = html_elements.find('a', {'class': 'vone__cats'})['href']
-        category_slug = re.search(r'aparat.com/([\w\-_]+)/?', category_element).group(1)
-
-        return {
-            'id': video_id,
-            'title': title,
-            'description': description,
-            'ext': 'mp4',
-            'thumbnail': thumbnail,
-            'formats': formats,
-            'tags': tags,
-            'categories': [category_slug],
-            'age_limit': self._family_friendly_search(webpage),
-        }
+        print('result', result)
 
     def _family_friendly_search(self, html):
         return 0
